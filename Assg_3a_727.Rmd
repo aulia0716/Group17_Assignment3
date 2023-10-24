@@ -156,3 +156,177 @@ pops <- do.call(cbind, pop_list)
 pops
 ```
 
+
+### Scraping and Analyzing Text Data
+
+Suppose we wanted to take the actual text from the Wikipedia pages instead of just the information in the table. Our goal in this section is to extract the text from the body of the pages, then do some basic text cleaning and analysis.
+
+First, scrape just the text without any of the information in the margins or headers. For example, for "Grand Boulevard", the text should start with, "Grand Boulevard on the South Side of Chicago, Illinois, is one of the …". Make sure all of the text is in one block by using something like the code below (I called my object description).
+
+Using a similar loop as in the last section, grab the descriptions of the various communities areas. Make a tibble with two columns: the name of the location and the text describing the location.
+
+```{r}
+# Build the loop
+# Initialize an empty tibble to store the information
+city_data <- tibble(City = character(0), Description = character(0))
+
+for (i in adj_city_c) {
+  
+  # grab the information from the url
+  url <- paste0("https://en.wikipedia.org/wiki/", i, sep = "") 
+  site <- read_html(url)
+  nds <- html_elements(site, xpath = '//p')
+  names <- html_text(nds) %>% paste(collapse = ' ')
+  
+  # Create a tibble for the current city and append it to city_data
+  city_info <- tibble(City = i, Description = names)
+  city_data <- bind_rows(city_data, city_info)
+}
+
+# Print the final tibble
+print(city_data)
+```
+
+Let's clean the data using tidytext. If you have trouble with this section, see the example shown in https://www.tidytextmining.com/tidytext.html
+
+```{r}
+# Install the library
+library(tidytext)
+```
+
+Create tokens using unnest_tokens. Make sure the data is in one-token-per-row format. Remove any stop words within the data. What are the most common words used overall?
+
+Plot the most common words within each location. What are some of the similarities between the locations? What are some of the differences?
+
+```{r}
+# create token using `unnest_token`
+tidy_city <- city_data %>%
+  unnest_tokens(Description, Description, token = "words")
+head(tidy_city)
+```
+
+```{r, message=FALSE}
+# Load stop words
+data(stop_words)
+
+# change the column names
+names(tidy_city)[names(tidy_city) == "Description"] <- "word"
+
+# Assuming you have a tibble called tidy_books in the one-word-per-row format
+tidy_city2 <- tidy_city %>%
+            anti_join(stop_words)
+
+# Check the result
+head(tidy_city2)
+```
+
+```{r}
+# compute overall common words within each location
+library(dplyr)
+tidy_city3 <- tidy_city2 %>%
+  count(word, sort = TRUE)
+
+# print the result
+head(tidy_city3)
+```
+ 
+```{r}
+library(tidyverse)
+
+tidy_city3 %>%
+  filter(n > 30) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+```
+
+The most common words with a frequency higher than thirty in Oakland, Kenwood, and Hyde Park community areas are `park`, `hyde`, `chicago`,  `street`, and `kenwood`. 
+
+### Similarities and Difference among community areas (Just for communities in east of Grand Boulevard)
+
+```{r}
+library(tidyr)
+
+# build the table
+frequency <- tidy_city2 %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  count(City, word) %>%
+  group_by(City) %>%
+  mutate(proportion = n / sum(n)) %>% 
+  select(-n) %>% 
+  pivot_wider(names_from = City, values_from = proportion) %>%
+  pivot_longer(`Kenwood,_Chicago`:`Hyde_Park,_Chicago`, names_to = "City", values_to = "proportion")
+
+# print the result
+frequency
+```
+
+### Create plot 
+
+```{r, message=FALSE, warning=FALSE}
+library(scales)
+
+# create the plot of words frequency
+ggplot(frequency, aes(x = proportion, y = `Oakland,_Chicago`, 
+                      color = abs(`Oakland,_Chicago` - proportion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), 
+                       low = "darkslategray4", high = "gray75") +
+  facet_wrap(~City, ncol = 2) +
+  theme(legend.position="none") +
+  labs(y = "Oakland,_Chicago", x = NULL)
+```
+
+The word close to the plot line shows the similar frequency between the two cities. Based on the graph, `Chicago` is the most common word, with the highest frequency in each community area (Oakland, Hyde Park, and Kenwood). `Boulevard` is the least common word in the three communities. 
+
+`African`, `American`, and `rest` are common words between Oakland and Hyde Park. The word `community`, `avenue`, `cottage`, `center`, and `boulevard` are common words between Oakland and Kenwood. Additionally, only in Hyde Park the words `apartment`, `house`, and `park` have a high frequency. `housing`, `constructed`, `church`, and `beginning` are words with high frequency only in Oakland. Furthermore, `Kenwood` and `annexed` are words with high frequency only in Kenwood. 
+
+### Compute correlation test between Hyde Park and Oakland
+
+```{r}
+# Subset the data for the current city
+  city_data <- frequency[frequency$City == "Hyde_Park,_Chicago", ]
+  
+# Perform the correlation test
+  cor_test_result <- cor.test(data = city_data, ~ proportion + `Oakland,_Chicago`)
+  
+# Print the result 
+  cor_test_result
+```
+
+The correlation value of word frequency between Oakland and Hyde Park shows a relatively high and positive  with a score of 0.7. All of the correlation shows a statistically significant result. It means that the words with high frequency in Oakland tend to have a high frequency in Hyde Park. 
+
+### Compute correlation test between Kenwood and Oakland
+
+```{r}
+# Subset the data for the current city
+  city_data <- frequency[frequency$City == "Kenwood,_Chicago", ]
+  
+# Perform the correlation test
+  cor_test_result <- cor.test(data = city_data, ~ proportion + `Oakland,_Chicago`)
+  
+# Print the result 
+  cor_test_result
+```
+
+The correlation value of word frequency between Oakland and Kenwood is 0.5. The correlation value has a moderate, significant, and positive score. It means that the words with high frequency in Oakland tend to have a high frequency in Kenwood. 
+
+### Check correlation between Kenwood and Hyde Park
+
+```{r}
+# Subset the data for the two cities
+city_data_kenwood <- frequency[frequency$City == "Kenwood,_Chicago", ]
+city_data_hyde_park <- frequency[frequency$City == "Hyde_Park,_Chicago", ]
+
+# Perform the correlation test
+cor_test_result <- cor.test(city_data_kenwood$proportion, city_data_hyde_park$proportion)
+
+# Print the result
+print(cor_test_result)
+```
+The correlation value of word frequency between Hyde Park and Kenwood is 0.5. The correlation value has a moderate, significant, and positive score. It means that the words with high frequency in Hyde Park tend to have a high frequency in Kenwood.
