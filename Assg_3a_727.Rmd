@@ -1,0 +1,158 @@
+---
+title: "Assg_3a"
+author: "Yesdi Calvin, Aulia Dini"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### GitHub link: https://github.com/aulia0716/Group17_Assignment3.git
+
+### Library
+
+```{r, message=FALSE, warning=FALSE}
+library(xml2)
+library(rvest)
+library(tidyverse)
+library(xml2)
+library(rvest)
+library(jsonlite)
+library(robotstxt)
+library(RSocrata)
+library(curl)
+```
+
+### Web Scraping
+
+In this assignment, your task is to scrape some information from Wikipedia. We start with the following page about Grand Boulevard, a Chicago Community Area.
+
+https://en.wikipedia.org/wiki/Grand_Boulevard,_Chicago
+
+The ultimate goal is to gather the table "Historical population" and convert it to a data.frame.
+
+As a first step, read in the html page as an R object. Extract the tables from this object (using the rvest package) and save the result as a new object. Follow the instructions if there is an error. Use str() on this new object, it should be a list. Try to find the position of the "Historical population" in this list since we need it in the next step.
+
+Extract the "Historical population" table from the list and save it as another object. You can use subsetting via [[…]] to extract pieces from a list. Print the result.
+
+You will see that the table needs some additional formatting. We only want rows and columns with actual values (I called the table object pop).
+
+```{r}
+# read the path
+paths_allowed("https://en.wikipedia.org/wiki/Grand_Boulevard,_Chicago")
+```
+
+```{r}
+# read the html
+site <- read_html("https://en.wikipedia.org/wiki/Grand_Boulevard,_Chicago")
+site
+```
+```{r}
+# Extract the tables from the HTML page
+tables <- site %>% html_table(fill = TRUE)
+tables
+```
+
+```{r}
+# Use str() on this new object to display the structure of the tables
+#str(tables)
+```
+
+```{r}
+# Extract the "Historical population" table from the list
+pop0 <- tables[[2]]
+pop0
+```
+
+```{r}
+# We only want rows and columns with actual values. So, it needs some additional formatting. 
+pop <- pop0[2:10,-3]
+print(pop)
+```
+
+### Expanding to More Pages
+
+That's it for this page. However, we may want to repeat this process for other community areas. The Wikipedia page https://en.wikipedia.org/wiki/Grand_Boulevard,_Chicago has a section on "Places adjacent to Grand Boulevard, Chicago" at the bottom. Can you find the corresponding table in the list of tables that you created earlier? Extract this table as a new object.
+
+```{r}
+# Extract the "Places adjacent to Grand Boulevard, Chicago" from the list
+adj_city <- tables[[3]]
+```
+
+```{r}
+# Extract only the cells of the relevant column from the table
+adj_city_east <- adj_city[3]
+print(adj_city_east)
+```
+
+We want to use this list to create a loop that extracts the population tables from the Wikipedia pages of these places. To make this work and build valid urls, we need to replace empty spaces in the character vector with underscores. This can be done with gsub(), or by hand. The resulting vector should look like this: "Oakland,_Chicago" "Kenwood,_Chicago" "Hyde_Park,_Chicago".
+
+```{r}
+# Remove the first row containing "Armour Square, Chicago"
+adj_city_east1 <- adj_city_east[-which(adj_city_east == "Armour Square, Chicago"), ]
+
+# Define the values to keep
+adj_city_east1 <- c("Oakland, Chicago", "Kenwood, Chicago", "Hyde Park, Chicago")
+
+# Remove any leading or trailing whitespace
+adj_city_c <- trimws(adj_city_east1)
+adj_city_c <- gsub("^\\d+\\s+", "", adj_city_c)
+
+# Replace spaces with underscores in the community area names
+adj_city_c <- gsub(" ", "_", adj_city_c)
+
+# Print the result
+print(adj_city_c)
+```
+
+To prepare the loop, we also want to copy our pop table and rename it as pops. In the loop, we append this table by adding columns from the other community areas.
+
+Build a small loop to test whether you can build valid urls using the vector of places and pasting each element of it after https://en.wikipedia.org/wiki/ in a for loop. Calling url shows the last url of this loop, which should be https://en.wikipedia.org/wiki/Hyde_Park,_Chicago.
+
+```{r}
+# Check the loop for the url
+ for(i in adj_city_c) {
+   url <- paste0("https://en.wikipedia.org/wiki/",i, sep = "")
+   }
+ url
+```
+
+Finally, extend the loop and add the code that is needed to grab the population tables from each page. Add columns to the original table pops using cbind().
+
+```{r}
+# build the loop 
+# Create a list to store the data frames
+pop_list <- list()
+
+for(i in adj_city_c) {
+  
+  # access the link
+  url <- paste0("https://en.wikipedia.org/wiki/",i, sep = "") 
+  site <- read_html(url)
+  print(url)
+  
+  # grab the tables
+  tables <- site %>% html_table(fill = TRUE)
+  
+  # pick the population table
+  pop0 <- tables[[2]]
+  
+  # clean the table
+  pop <- pop0[2:10,-3]
+  
+  # Store the data frame in the list
+  pop_list[[i]] <- pop
+  
+}
+
+# Combine the data frames in the list using cbind
+pops <- do.call(cbind, pop_list)
+
+# print the result
+pops
+```
+
